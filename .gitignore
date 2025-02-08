@@ -1,4 +1,6 @@
 test.py
 metrics/
 models/
-intersection/
+intersection/episode_routes.rou.alt.xml
+intersection/episode_routes.rou.xml
+intersection/episode_trips.trips.xml
