@@ -69,8 +69,8 @@ class Simulation(object):
 
         # 异步更新信号策略
         while current_step < self._max_steps:
-            if current_step % 100 == 0:
-                print(f"-Current step: {current_step} -Vehicle Count: {traci.vehicle.getIDCount()} -Total Cost time: {round(timeit.default_timer() - start_time, 1)}s")
+            if (current_step+1) % 600 == 0:
+                print(f"-Current step: {current_step+1} -Vehicle Count: {traci.vehicle.getIDCount()} -Total Cost time: {round(timeit.default_timer() - start_time, 1)}s")
             # 各交叉口信号独立更新
             for signal_id in signal_ids:
                 if current_step >= next_update_step[signal_id]:
@@ -148,8 +148,8 @@ class Simulation(object):
 
     def _get_state(self, signal_id):
         position = np.zeros([self._lane_num, round(self._area_length / self._grids_length)])
-        # speed = np.zeros([self._lane_num, round(self._area_length / self._grids_length)])
-        # accel = np.zeros([self._lane_num, round(self._area_length / self._grids_length)])
+        speed = np.zeros([self._lane_num, round(self._area_length / self._grids_length)])
+        accel = np.zeros([self._lane_num, round(self._area_length / self._grids_length)])
 
         in_lanes = self._get_in_lanes(signal_id)
         car_list = traci.vehicle.getIDList()
@@ -166,10 +166,13 @@ class Simulation(object):
             lane_cell = math.floor(lane_pos / self._grids_length)
             if lane_cell < self._area_length / self._grids_length:
                 position[lane_group][lane_cell] = 1
-                # speed[lane_group][lane_cell] = traci.vehicle.getSpeed(car_id)
-                # accel[lane_group][lane_cell] = traci.vehicle.getAcceleration(car_id)
+                speed[lane_group][lane_cell] = traci.vehicle.getSpeed(car_id)
+                accel[lane_group][lane_cell] = traci.vehicle.getAcceleration(car_id)
 
-        state = np.concatenate(position, axis=0)
+        speed = speed / (np.max(speed) + 1e-7)
+        accel = accel / (np.max(accel) + 1e-7)
+
+        state = np.stack([position, speed, accel], axis=0).flatten()
         return state
 
     def _get_reward(self, signal_id):
