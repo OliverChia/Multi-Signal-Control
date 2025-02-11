@@ -7,7 +7,7 @@ class Visualization:
         self._path = path
         self._dpi = dpi
 
-    def save_data_and_plot(self, data, filename, xlabel, ylabel, episode):
+    def save_data_and_plot(self, data, filename, xlabel, ylabel, episode='test'):
         """
         Produce a plot of performance of the agent over the session and save the relative data to txt
         """

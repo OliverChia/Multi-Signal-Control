@@ -74,7 +74,7 @@ class Simulation(object):
 
         # 异步更新信号策略
         while current_step < self._max_steps:
-            if (current_step+1) % 600 == 0:
+            if (current_step+1) % 300 == 0:
                 print(f"-Current step: {current_step+1} -Vehicle Count: {traci.vehicle.getIDCount()} -Total Cost time: {round(timeit.default_timer() - start_time, 1)}s")
             # 各交叉口信号独立更新
             for signal_id in signal_ids:

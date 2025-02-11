@@ -126,6 +126,11 @@ if __name__ == '__main__':
             config['area_length']
         )
 
+        Visualization = Visualization(
+            plot_path,
+            dpi=300
+        )
+
         print('\n----- Test episode')
         simulation_time = Simulation.run(config['episode_seed'])  # run the simulation
         print('Simulation time:', simulation_time, 's')
