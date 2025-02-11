@@ -94,10 +94,37 @@ if __name__ == '__main__':
         print("----- Session info saved at:", models_path)
 
     else:
-        models_path = set_test_path(config['models_path'], config['model_to_test'])
+        models_path = set_test_path(config['models_path'], config['model_to_test'], config['model_episode'])
         plot_path = set_plot_path(config['metrics_path'], config['model_to_test'])
 
         # 初始化类
+        TrafficGen = TrafficGenerator(
+            config['max_steps'],
+            config['n_cars_generated']
+        )
+
+        Models = [
+            model.TestModel(
+                signal_id,
+                models_path[signal_id],
+                config["phase_dim"],
+                config["duration_dim"]
+            )
+            for signal_id in models_path
+        ]
+
+        Simulation = Simulation(
+            Models,
+            TrafficGen,
+            sumo_cmd,
+            config['isTrain'],
+            config['training_epochs'],
+            config['max_steps'],
+            config['yellow_duration'],
+            config['green_min'],
+            config['grids_length'],
+            config['area_length']
+        )
 
         print('\n----- Test episode')
         simulation_time = Simulation.run(config['episode_seed'])  # run the simulation
@@ -105,7 +132,10 @@ if __name__ == '__main__':
 
         print("----- Testing info of action saved at:", plot_path)
 
-        copyfile(src='settings.ini', dst=os.path.join(plot_path, 'settings.ini'))
+        copyfile(src='config.ini', dst=os.path.join(plot_path, 'config.ini'))
 
         # 绘制图表
+        Visualization.save_data_and_plot(data=Simulation.queue_length_episode, filename='queue', xlabel='Step', ylabel='Queue length (vehicles)')
+        Visualization.save_data_and_plot(data=Simulation.travel_time_episode, filename='travel', xlabel='Step', ylabel='Travel time (s)')
+        Visualization.save_data_and_plot(data=Simulation.vehicle_speed_episode, filename='speed', xlabel='Step', ylabel='Vehicle speed (m/s)')
 

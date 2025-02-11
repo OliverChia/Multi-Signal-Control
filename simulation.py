@@ -43,7 +43,12 @@ class Simulation(object):
         # 初始化关键要素
         current_step = 0
         signal_ids = traci.trafficlight.getIDList()
-        rl_signals = self._init_agents_id(signal_ids)
+
+        if self._isTrain:
+            rl_signals = self._init_agents_id(signal_ids)
+        else:
+            rl_signals = {agent._signal_id: agent for agent in self._Models}
+
         if episode == 0:
             self._init_statistics(rl_signals)
 
@@ -111,9 +116,7 @@ class Simulation(object):
                             next_update_step[signal_id] = current_step + next_duration[signal_id] + self._green_min
                         
                         # 统计累加奖励
-                        if not self._isTrain:
-                            pass
-                        elif reward < 0:
+                        if reward < 0:
                             self._sum_reward[signal_id] += reward
 
             # 每帧需要更新的内容
@@ -171,7 +174,8 @@ class Simulation(object):
 
         speed = speed / (np.max(speed) + 1e-7)
         accel = accel / (np.max(accel) + 1e-7)
-
+        
+        # state = np.concatenate(position, axis=0)
         state = np.stack([position, speed, accel], axis=0).flatten()
         return state
 
@@ -305,3 +309,15 @@ class Simulation(object):
     @property
     def avg_vehicle_speed_store(self):
         return self._avg_vehicle_speed_store
+    
+    @property
+    def queue_length_episode(self):
+        return self._sum_queue_length
+    
+    @property
+    def travel_time_episode(self):
+        return self._sum_travel_time
+    
+    @property
+    def vehicle_speed_episode(self):
+        return self._sum_vehicle_speed

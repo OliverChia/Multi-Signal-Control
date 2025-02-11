@@ -1,5 +1,6 @@
 import configparser
 from sumolib import checkBinary
+import re
 import os
 import sys
 
@@ -33,6 +34,7 @@ def import_configuration(config_file):
     config['models_path'] = content['dir']['models_path']
     config['metrics_path'] = content['dir']['metrics_path']
     config['model_to_test'] = content['dir']['model_to_test']
+    config['model_episode'] = content['dir']['model_episode']
     config['sumocfg_file_name'] = content['dir']['sumocfg_file_name']
     return config
 
@@ -80,20 +82,34 @@ def set_train_path(models_path_name):
     return data_path
 
 
-def set_test_path(models_path_name, model_n):
-    model__path = os.path.join(os.getcwd(), models_path_name, 'experiment_' + str(model_n), '')
-    return model__path
+def set_test_path(models_path_name, experiment_n, model_episode):
+    path = os.path.join(os.getcwd(), models_path_name, 'experiment_' + str(experiment_n), '')
+    pt_path = os.path.join(path, 'pt', '')
+    all_files = os.listdir(pt_path)
+    
+    pattern = re.compile(rf"trained_model_(J\d+#\d+)_{str(model_episode)}\.pt$")
+
+    result_dict = {}
+
+    for f in all_files:
+        match = pattern.match(f)
+        if match:
+            intersection_id = match.group(1)  # 提取交叉口 ID
+            file_path = os.path.join(pt_path, f)  # 获取完整文件路径
+            result_dict[intersection_id] = file_path  # 存入字典
+
+    return result_dict
 
 
-def set_plot_path(models_path_name, model_n):
+def set_plot_path(metrics_path_name, experiment_n):
     """
     Returns a model path that identifies the model number provided as argument and a newly created 'test' path
     """
-    model_folder_path = os.path.join(os.getcwd(), models_path_name, 'experiment_' + str(model_n), '')
+    model_folder_path = os.path.join(os.getcwd(), metrics_path_name, 'experiment_' + str(experiment_n), '')
 
     if os.path.isdir(model_folder_path):
         plot_path = os.path.join(model_folder_path, 'test', '')
         os.makedirs(os.path.dirname(plot_path), exist_ok=True)
         return plot_path
     else:
-        sys.exit('The model number specified does not exist in the models folder')
+        sys.exit('The model number specified does not exist in the metrics folder')

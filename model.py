@@ -16,8 +16,8 @@ class Neural_Network(nn.Module):
     def __init__(self, input_dim, action_A1_dim, action_A2_dim):
         super(Neural_Network, self).__init__()
         self.fc1 = nn.Linear(input_dim, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 64)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 128)
 
         self.val_layer_A1 = nn.Linear(64, 1)
         self.adv_layer_A1 = nn.Linear(64, action_A1_dim)
@@ -148,3 +148,28 @@ class TrainingModel(object):
     @property
     def loss_store(self):
         return self._loss_store
+    
+class TestModel(nn.Module):
+    def __init__(self, signal_id, model_file_path, phase_dim, duration_dim):
+        super().__init__()
+        self._device = 'cpu'
+        self._signal_id = signal_id
+        self._phase_dim = phase_dim
+        self._duration_dim = duration_dim
+        self._model = self.load_model(model_file_path)
+
+    def load_model(self, model_file_path):
+        if os.path.isfile(model_file_path):
+            loaded_model = torch.load(model_file_path, map_location=self._device)
+            return loaded_model
+        else:
+            sys.exit("Model number not found")
+
+    def predict(self, state):
+        state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self._device)
+        with torch.no_grad():
+            q_values_A1, q_values_A2 = self._model(state_tensor)
+            phase = torch.argmax(q_values_A1, dim=1).item()
+            duration = torch.argmax(q_values_A2, dim=1).item()
+        return phase, duration
+    
