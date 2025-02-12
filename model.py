@@ -19,8 +19,8 @@ class Neural_Network(nn.Module):
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, 128)
 
-        self.val_layer = nn.Linear(64, 1)
-        self.adv_layer = nn.Linear(64, action_dim)
+        self.val_layer = nn.Linear(128, 1)
+        self.adv_layer = nn.Linear(128, action_dim)
 
     def forward(self, state):
         x = torch.relu(self.fc1(state))
