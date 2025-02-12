@@ -13,17 +13,14 @@ class Neural_Network(nn.Module):
     '''
         神经网络部分，采用多头网络输出、3DQN结构
     '''
-    def __init__(self, input_dim, action_A1_dim, action_A2_dim):
+    def __init__(self, input_dim, action_dim):
         super(Neural_Network, self).__init__()
         self.fc1 = nn.Linear(input_dim, 128)
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, 128)
 
-        self.val_layer_A1 = nn.Linear(64, 1)
-        self.adv_layer_A1 = nn.Linear(64, action_A1_dim)
-
-        self.val_layer_A2 = nn.Linear(64, 1)
-        self.adv_layer_A2 = nn.Linear(64, action_A2_dim)
+        self.val_layer = nn.Linear(64, 1)
+        self.adv_layer = nn.Linear(64, action_dim)
 
     def forward(self, state):
         x = torch.relu(self.fc1(state))
@@ -31,15 +28,11 @@ class Neural_Network(nn.Module):
         x = torch.relu(self.fc3(x))
 
         # Dueling Network
-        val_A1 = self.val_layer_A1(x)
-        adv_A1 = self.adv_layer_A1(x)
-        q_values_A1 = val_A1 + adv_A1 - adv_A1.mean(dim=1, keepdim=True)
+        val = self.val_layer(x)
+        adv = self.adv_layer(x)
+        q_values = val + adv - adv.mean(dim=1, keepdim=True)
 
-        val_A2 = self.val_layer_A2(x)
-        adv_A2 = self.adv_layer_A2(x)
-        q_values_A2 = val_A2 + adv_A2 - adv_A2.mean(dim=1, keepdim=True)
-
-        return q_values_A1, q_values_A2
+        return q_values
 
 class TrainingModel(object):
     '''
@@ -57,20 +50,30 @@ class TrainingModel(object):
 
 
         # 初始化神经网络
-        self.q_network = Neural_Network(state_dim, phase_dim, duration_dim).to(self._device)
-        self.target_network = Neural_Network(state_dim, phase_dim, duration_dim).to(self._device)
-        self.target_network.load_state_dict(self.q_network.state_dict())
-        self.target_network.eval()
+        self.phase_q_network = Neural_Network(state_dim, phase_dim).to(self._device)
+        self.phase_target_network = Neural_Network(state_dim, phase_dim).to(self._device)
+        self.phase_target_network.load_state_dict(self.phase_q_network.state_dict())
+        self.phase_target_network.eval()
 
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
-        self.loss_fn = nn.MSELoss()
+        self.phase_optimizer = optim.Adam(self.phase_q_network.parameters(), lr=lr)
+        self.phase_loss = nn.MSELoss()
+
+        self.duration_q_network = Neural_Network(state_dim, duration_dim).to(self._device)
+        self.duration_target_network = Neural_Network(state_dim, duration_dim).to(self._device)
+        self.duration_target_network.load_state_dict(self.duration_q_network.state_dict())
+        self.duration_target_network.eval()
+
+        self.duration_optimizer = optim.Adam(self.duration_q_network.parameters(), lr=lr)
+        self.duration_loss = nn.MSELoss()
+
         self.memory = deque(maxlen=size_max)  # 经验回放池
         self.epsilon = 1.0  # 初始探索率
         self.epsilon_decay = 0.995  # 衰减系数
         self.epsilon_min = 0.1
 
         # 统计指标
-        self._loss_store = []
+        self._phase_loss_store = []
+        self._duration_loss_store = []
 
     def predict(self, state):
         if np.random.uniform(0, 1) < self.epsilon:
@@ -79,9 +82,10 @@ class TrainingModel(object):
         else:
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self._device)
             with torch.no_grad():
-                q_values_A1, q_values_A2 = self.q_network(state_tensor)
-                phase = torch.argmax(q_values_A1, dim=1).item()
-                duration = torch.argmax(q_values_A2, dim=1).item()
+                phase_q_values = self.phase_q_network(state_tensor)
+                duration_q_values = self.duration_q_network(state_tensor)
+                phase = torch.argmax(phase_q_values, dim=1).item()
+                duration = torch.argmax(duration_q_values, dim=1).item()
         return phase, duration
 
     def learn(self):
@@ -99,27 +103,33 @@ class TrainingModel(object):
         next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(self._device)
         
         # 计算 Q 值
-        q_values_A1, q_values_A2 = self.q_network(states)
-        q_values_A1 = q_values_A1.gather(1, phases)
-        q_values_A2 = q_values_A2.gather(1, durations)
+        phase_q_values = self.phase_q_network(states)
+        duration_q_values = self.duration_q_network(states)
+        phase_q_values = phase_q_values.gather(1, phases)
+        duration_q_values = duration_q_values.gather(1, durations)
 
         # 计算目标 Q 值
         with torch.no_grad():
-            next_q_values_A1, next_q_values_A2 = self.target_network(next_states)
-            max_next_q_values_A1 = next_q_values_A1.max(dim=1, keepdim=True)[0]
-            max_next_q_values_A2 = next_q_values_A2.max(dim=1, keepdim=True)[0]
-            target_q_values_A1 = rewards + self._gamma * max_next_q_values_A1
-            target_q_values_A2 = rewards + self._gamma * max_next_q_values_A2
+            next_phase_q_values = self.phase_target_network(next_states)
+            next_duration_q_values = self.duration_target_network(next_states)
+            max_next_phase_q_values = next_phase_q_values.max(dim=1, keepdim=True)[0]
+            max_next_duration_q_values = next_duration_q_values.max(dim=1, keepdim=True)[0]
+            phase_target_q_values = rewards + self._gamma * max_next_phase_q_values
+            duration_target_q_values = rewards + self._gamma * max_next_duration_q_values
 
         # 计算损失
-        loss_A1 = self.loss_fn(q_values_A1, target_q_values_A1)
-        loss_A2 = self.loss_fn(q_values_A2, target_q_values_A2)
-        loss = loss_A1 + loss_A2
+        phase_loss = self.phase_loss(phase_q_values, phase_target_q_values)
+        duration_loss = self.duration_loss(duration_q_values, duration_target_q_values)
 
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        self._loss_store.append(loss.item())
+        self.phase_optimizer.zero_grad()
+        phase_loss.backward()
+        self.duration_optimizer.zero_grad()
+        duration_loss.backward()
+
+        self.phase_optimizer.step()
+        self.duration_optimizer.step()
+        self._phase_loss_store.append(phase_loss.item())
+        self._duration_loss_store.append(duration_loss.item())
 
     def sample_processor(self, old_state, old_phase, old_duration, reward, current_state):
         self.memory.append((old_state, old_phase, old_duration, reward, current_state))
@@ -129,47 +139,53 @@ class TrainingModel(object):
         # self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
     def update_target_network(self):
-        self.target_network.load_state_dict(self.q_network.state_dict())
+        self.phase_target_network.load_state_dict(self.phase_q_network.state_dict())
+        self.duration_target_network.load_state_dict(self.duration_q_network.state_dict())
 
     def save_model(self, path, episode):
         pt_path = os.path.join(path, 'pt', '')
         os.makedirs(pt_path, exist_ok=True)
-        torch.save(self.q_network, os.path.join(pt_path, 'trained_model_' + self._signal_id + '_' + str(episode) + '.pt'))
 
-    def load_model(self, model_folder_path, model_episode, signal_id):
-        model_file_path = os.path.join(model_folder_path, 'trained_model_' + signal_id + '_' + str(model_episode) + '.pt')
-
-        if os.path.isfile(model_file_path):
-            loaded_model = torch.load(model_file_path, map_location=self._device)
-            return loaded_model
-        else:
-            sys.exit("Model number not found")
+        save_path = os.path.join(pt_path, 'trained_model_' + self._signal_id + '_' + str(episode) + '.pt')
+        torch.save({
+            'phase_q_network_state_dict': self.phase_q_network.state_dict(),
+            'duration_q_network_state_dict': self.duration_q_network.state_dict(),
+        }, save_path)
     
     @property
-    def loss_store(self):
-        return self._loss_store
+    def phase_loss_store(self):
+        return self._phase_loss_store
+    
+    @property
+    def duration_loss_store(self):
+        return self._duration_loss_store
     
 class TestModel(nn.Module):
-    def __init__(self, signal_id, model_file_path, phase_dim, duration_dim):
+    def __init__(self, signal_id, model_file_path, state_dim, phase_dim, duration_dim):
         super().__init__()
         self._device = 'cpu'
         self._signal_id = signal_id
+        self._state_dim = state_dim
         self._phase_dim = phase_dim
         self._duration_dim = duration_dim
-        self._model = self.load_model(model_file_path)
+        self.phase_q_network = Neural_Network(state_dim, phase_dim).to(self._device)
+        self.duration_q_network = Neural_Network(state_dim, duration_dim).to(self._device)
+        self.load_model(model_file_path)
 
     def load_model(self, model_file_path):
         if os.path.isfile(model_file_path):
-            loaded_model = torch.load(model_file_path, map_location=self._device)
-            return loaded_model
+            checkpoint = torch.load(model_file_path, map_location=self._device)
+            self.phase_q_network.load_state_dict(checkpoint['phase_q_network_state_dict'])
+            self.duration_q_network.load_state_dict(checkpoint['duration_q_network_state_dict'])
         else:
             sys.exit("Model number not found")
 
     def predict(self, state):
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self._device)
         with torch.no_grad():
-            q_values_A1, q_values_A2 = self._model(state_tensor)
-            phase = torch.argmax(q_values_A1, dim=1).item()
-            duration = torch.argmax(q_values_A2, dim=1).item()
+            phase_q_values = self.phase_q_network(state_tensor)
+            duration_q_values = self.duration_q_network(state_tensor)
+            phase = torch.argmax(phase_q_values, dim=1).item()
+            duration = torch.argmax(duration_q_values, dim=1).item()
         return phase, duration
     

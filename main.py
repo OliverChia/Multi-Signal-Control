@@ -81,7 +81,9 @@ if __name__ == '__main__':
             # 数据绘图及模型保存
             if (episode + 1) % 100 == 0:
                 [Curve.save_data_and_plot(data=Simulation.reward_store[agent._signal_id], filename=agent._signal_id + '_reward_', xlabel='Episode', ylabel='Cumulative reward', episode=str(episode + 1)) for agent in Models]
-                [Curve.save_data_and_plot(data=agent.loss_store, filename=agent._signal_id + '_loss_', xlabel='Episode', ylabel='Cumulative loss', episode=str(episode + 1)) for agent in Models]
+                [Curve.save_data_and_plot(data=agent.phase_loss_store, filename=agent._signal_id + '_loss_', xlabel='Episode', ylabel='Cumulative loss', episode=str(episode + 1)) for agent in Models]
+                [Curve.save_data_and_plot(data=agent.duration_loss_store, filename=agent._signal_id + '_loss_', xlabel='Episode', ylabel='Cumulative loss', episode=str(episode + 1)) for agent in Models]
+
                 Metrics.save_data_and_plot(data=Simulation.avg_queue_length_store, filename='queue_', xlabel='Episode', ylabel='Average queue length (vehicles)', episode=str(episode + 1))
                 Metrics.save_data_and_plot(data=Simulation.avg_travel_time_store, filename='travel_', xlabel='Episode', ylabel='Average travel time (seconds)', episode=str(episode + 1))
                 Metrics.save_data_and_plot(data=Simulation.avg_vehicle_speed_store, filename='speed_', xlabel='Episode', ylabel='Average vehicle speed (m/s)', episode=str(episode + 1))
@@ -107,6 +109,7 @@ if __name__ == '__main__':
             model.TestModel(
                 signal_id,
                 models_path[signal_id],
+                config["state_dim"],
                 config["phase_dim"],
                 config["duration_dim"]
             )
