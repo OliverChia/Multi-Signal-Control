@@ -39,7 +39,7 @@ class TrainingModel(object):
         算法部分
     '''
     def __init__(self, state_dim, phase_dim, duration_dim, batch_size, lr, gamma, size_max):
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = 'cpu'    # torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._signal_id = None
         self._state_dim = state_dim
         self._phase_dim = phase_dim
@@ -79,7 +79,7 @@ class TrainingModel(object):
         if np.random.uniform(0, 1) < self.epsilon:
             phase = np.random.randint(0, self._phase_dim)
             duration = np.random.randint(0, self._duration_dim)
-            phase_q_values = torch.tensor([np.ones(self._phase_dim) / self._phase_dim for _ in phase_joint_q])
+            phase_q_values = torch.tensor([np.ones(self._phase_dim) / self._phase_dim for _ in phase_joint_q]).to(self._device)
         else:
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self._device)
             with torch.no_grad():
