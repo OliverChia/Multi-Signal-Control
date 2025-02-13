@@ -75,7 +75,7 @@ class TrainingModel(object):
         self._phase_loss_store = []
         self._duration_loss_store = []
 
-    def predict(self, state):
+    def predict(self, state, signal_idx, phase_joint_q):
         if np.random.uniform(0, 1) < self.epsilon:
             phase = np.random.randint(0, self._phase_dim)
             duration = np.random.randint(0, self._duration_dim)
@@ -84,9 +84,13 @@ class TrainingModel(object):
             with torch.no_grad():
                 phase_q_values = self.phase_q_network(state_tensor)
                 duration_q_values = self.duration_q_network(state_tensor)
-                phase = torch.argmax(phase_q_values, dim=1).item()
+
+                phase_joint_q[signal_idx] = phase_q_values[0].numpy()
+                new_strategies = self.compute_nash_equilibrium(phase_joint_q)
+
+                phase = torch.argmax(torch.tensor(new_strategies[signal_idx]), dim=0).item()
                 duration = torch.argmax(duration_q_values, dim=1).item()
-        return phase, duration
+        return phase, duration, phase_q_values[0].numpy()
 
     def learn(self):
         # 未到达采样阈值不进行训练
@@ -130,6 +134,51 @@ class TrainingModel(object):
         self.duration_optimizer.step()
         self._phase_loss_store.append(phase_loss.item())
         self._duration_loss_store.append(duration_loss.item())
+
+    def compute_nash_equilibrium(self, payoff_matrices, num_iterations=1000, tolerance=1e-6):
+        """
+        计算 n 个智能体的纳什均衡策略（近似）。
+        
+        参数：
+        - payoff_matrices: 长度为 n 的列表，其中第 i 个元素是智能体 i 的收益矩阵，形状为 (A1, A2, ..., An)。
+        - num_iterations: 最大迭代次数。
+        - tolerance: 策略变化的容忍度，用于判断收敛。
+
+        返回：
+        - strategies: 长度为 n 的列表，其中每个元素是对应智能体的混合策略。
+        """
+        num_agents = len(payoff_matrices)
+        action_spaces = [matrix.shape for matrix in payoff_matrices]
+
+        # 初始化所有智能体的混合策略为均匀分布
+        strategies = [np.ones(action_space) / action_space for action_space in action_spaces]
+
+        for iteration in range(num_iterations):
+            prev_strategies = [strategy.copy() for strategy in strategies]
+
+            for i in range(num_agents):
+                # 构造联合策略
+                joint_distribution = strategies[0]
+                for strategy in strategies[1:]:
+                    joint_distribution = np.tensordot(joint_distribution, strategy, axes=0)
+
+                # 计算当前联合策略下的期望收益
+                expected_payoff = np.sum(payoff_matrices[i] * joint_distribution)
+
+                # 计算最佳响应策略
+                best_response = np.zeros_like(strategies[i])
+                best_action = np.argmax(expected_payoff)
+                best_response[best_action] = 1.0
+
+                # 更新智能体 i 的策略为当前策略与最佳响应的加权和
+                strategies[i] = 0.5 * strategies[i] + 0.5 * best_response
+
+            # 检查策略是否收敛
+            max_change = max(np.max(np.abs(prev_strategy - strategy)) for prev_strategy, strategy in zip(prev_strategies, strategies))
+            if max_change < tolerance:
+                break
+
+        return strategies
 
     def sample_processor(self, old_state, old_phase, old_duration, reward, current_state):
         self.memory.append((old_state, old_phase, old_duration, reward, current_state))
@@ -180,12 +229,61 @@ class TestModel(nn.Module):
         else:
             sys.exit("Model number not found")
 
-    def predict(self, state):
+    def predict(self, state, signal_idx, phase_joint_q):
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self._device)
         with torch.no_grad():
             phase_q_values = self.phase_q_network(state_tensor)
             duration_q_values = self.duration_q_network(state_tensor)
-            phase = torch.argmax(phase_q_values, dim=1).item()
+
+            phase_joint_q[signal_idx] = phase_q_values[0].numpy()
+            new_strategies = self.compute_nash_equilibrium(phase_joint_q)
+
+            phase = torch.argmax(torch.tensor(new_strategies[signal_idx]), dim=0).item()
             duration = torch.argmax(duration_q_values, dim=1).item()
-        return phase, duration
+        return phase, duration, phase_q_values[0].numpy()
+    
+    def compute_nash_equilibrium(self, payoff_matrices, num_iterations=1000, tolerance=1e-6):
+        """
+        计算 n 个智能体的纳什均衡策略（近似）。
+        
+        参数：
+        - payoff_matrices: 长度为 n 的列表，其中第 i 个元素是智能体 i 的收益矩阵，形状为 (A1, A2, ..., An)。
+        - num_iterations: 最大迭代次数。
+        - tolerance: 策略变化的容忍度，用于判断收敛。
+
+        返回：
+        - strategies: 长度为 n 的列表，其中每个元素是对应智能体的混合策略。
+        """
+        num_agents = len(payoff_matrices)
+        action_spaces = [matrix.shape for matrix in payoff_matrices]
+
+        # 初始化所有智能体的混合策略为均匀分布
+        strategies = [np.ones(action_space) / action_space for action_space in action_spaces]
+
+        for iteration in range(num_iterations):
+            prev_strategies = [strategy.copy() for strategy in strategies]
+
+            for i in range(num_agents):
+                # 构造联合策略
+                joint_distribution = strategies[0]
+                for strategy in strategies[1:]:
+                    joint_distribution = np.tensordot(joint_distribution, strategy, axes=0)
+
+                # 计算当前联合策略下的期望收益
+                expected_payoff = np.sum(payoff_matrices[i] * joint_distribution)
+
+                # 计算最佳响应策略
+                best_response = np.zeros_like(strategies[i])
+                best_action = np.argmax(expected_payoff)
+                best_response[best_action] = 1.0
+
+                # 更新智能体 i 的策略为当前策略与最佳响应的加权和
+                strategies[i] = 0.5 * strategies[i] + 0.5 * best_response
+
+            # 检查策略是否收敛
+            max_change = max(np.max(np.abs(prev_strategy - strategy)) for prev_strategy, strategy in zip(prev_strategies, strategies))
+            if max_change < tolerance:
+                break
+
+        return strategies
     

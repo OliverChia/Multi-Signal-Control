@@ -48,6 +48,7 @@ class Simulation(object):
             rl_signals = self._init_agents_id(signal_ids)
         else:
             rl_signals = {agent._signal_id: agent for agent in self._Models}
+        rl_signals_idx = {key: index for index, key in enumerate(rl_signals.keys())}
 
         if episode == 0:
             self._init_statistics(rl_signals)
@@ -56,6 +57,7 @@ class Simulation(object):
         old_state = {signal_id: [] for signal_id in rl_signals}
         old_phase = {signal_id: 0 for signal_id in rl_signals}
         old_duration = {signal_id: 0 for signal_id in rl_signals}   # 记录强化学习信号灯下次持续时间，防止无车时与固定配时信号灯冲突
+        phase_joint_q = [np.ones(agent._phase_dim) / agent._phase_dim for agent in rl_signals.values()]     # 异步决策，按rl_signals中的顺序储存上一步策略
 
         # 环境交互时的判断变量
         current_phase = {signal_id: 0 for signal_id in signal_ids}
@@ -103,7 +105,9 @@ class Simulation(object):
                             agent.sample_processor(
                                 old_state[signal_id], old_phase[signal_id], old_duration[signal_id], reward, current_state)
 
-                        next_phase[signal_id], next_duration[signal_id] = agent.predict(current_state)
+                        signal_idx = rl_signals_idx[signal_id]
+                        next_phase[signal_id], next_duration[signal_id], single_q = agent.predict(current_state, signal_idx, phase_joint_q)
+                        phase_joint_q[signal_idx] = single_q
                         old_phase[signal_id] = next_phase[signal_id]
                         old_duration[signal_id] = next_duration[signal_id]
                         old_state[signal_id] = current_state
